@@ -1,0 +1,136 @@
+package gateway
+
+import (
+	"crypto/ed25519"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/netip"
+	"strings"
+	"time"
+)
+
+const Role = "gateway"
+
+type SigningKey struct {
+	KeyID     string     `json:"key_id"`
+	Algorithm string     `json:"algorithm"`
+	PublicKey string     `json:"public_key"`
+	Status    string     `json:"status"`
+	NotBefore time.Time  `json:"not_before"`
+	NotAfter  *time.Time `json:"not_after,omitempty"`
+}
+
+type Peer struct {
+	DeviceID           string `json:"device_id"`
+	WireGuardPublicKey string `json:"wireguard_public_key"`
+	WireGuardAddress   string `json:"wireguard_address"`
+	AllowedIPs         string `json:"allowed_ips"`
+}
+
+type Transport struct {
+	ServerName string `json:"server_name"`
+	Port       int    `json:"port"`
+	AuthID     string `json:"auth_id"`
+}
+
+type Signature struct {
+	Algorithm string `json:"algorithm"`
+	KeyID     string `json:"key_id"`
+	Value     string `json:"value"`
+}
+
+type Config struct {
+	SchemaVersion int       `json:"schema_version"`
+	Role          string    `json:"role"`
+	ConfigID      string    `json:"config_id"`
+	NetworkID     string    `json:"network_id"`
+	GatewayID     string    `json:"gateway_id"`
+	Generation    uint64    `json:"generation"`
+	IssuedAt      time.Time `json:"issued_at"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	InterfaceName string    `json:"interface_name"`
+	Address       string    `json:"address"`
+	ListenPort    int       `json:"listen_port"`
+	MTU           int       `json:"mtu"`
+	Peers         []Peer    `json:"peers"`
+	Transport     Transport `json:"transport"`
+	Signature     Signature `json:"signature"`
+}
+
+func (c Config) signingBytes() ([]byte, error) {
+	return json.Marshal(struct {
+		SchemaVersion int       `json:"schema_version"`
+		Role          string    `json:"role"`
+		ConfigID      string    `json:"config_id"`
+		NetworkID     string    `json:"network_id"`
+		GatewayID     string    `json:"gateway_id"`
+		Generation    uint64    `json:"generation"`
+		IssuedAt      time.Time `json:"issued_at"`
+		ExpiresAt     time.Time `json:"expires_at"`
+		InterfaceName string    `json:"interface_name"`
+		Address       string    `json:"address"`
+		ListenPort    int       `json:"listen_port"`
+		MTU           int       `json:"mtu"`
+		Peers         []Peer    `json:"peers"`
+		Transport     Transport `json:"transport"`
+	}{c.SchemaVersion, c.Role, c.ConfigID, c.NetworkID, c.GatewayID, c.Generation, c.IssuedAt, c.ExpiresAt, c.InterfaceName, c.Address, c.ListenPort, c.MTU, c.Peers, c.Transport})
+}
+
+func (c Config) Verify(keys []SigningKey, now time.Time) error {
+	if c.SchemaVersion != 1 || c.Role != Role || c.ConfigID == "" || c.NetworkID == "" || c.GatewayID == "" || c.Generation == 0 || c.InterfaceName == "" || len(c.InterfaceName) > 15 || c.ListenPort < 1 || c.ListenPort > 65535 || c.MTU < 576 || c.Transport.Port < 1 || c.Transport.Port > 65535 || c.Transport.ServerName == "" || c.Transport.AuthID == "" || c.Signature.Algorithm != "Ed25519" || !c.ExpiresAt.After(now) || c.IssuedAt.After(now.Add(30*time.Second)) {
+		return errors.New("invalid gateway signed config")
+	}
+	if prefix, err := netip.ParsePrefix(c.Address); err != nil || !prefix.Addr().Is4() || prefix.Bits() != 32 {
+		return errors.New("invalid gateway address")
+	}
+	for _, peer := range c.Peers {
+		if peer.DeviceID == "" || peer.WireGuardAddress == "" || peer.AllowedIPs == "" {
+			return errors.New("invalid gateway peer")
+		}
+		key, err := base64.StdEncoding.DecodeString(peer.WireGuardPublicKey)
+		if err != nil || len(key) != 32 {
+			return errors.New("invalid peer public key")
+		}
+	}
+	payload, err := c.signingBytes()
+	if err != nil {
+		return err
+	}
+	sig, err := base64.StdEncoding.DecodeString(c.Signature.Value)
+	if err != nil || len(sig) != ed25519.SignatureSize {
+		return errors.New("invalid gateway signature")
+	}
+	for _, key := range keys {
+		if key.KeyID != c.Signature.KeyID || key.Algorithm != "Ed25519" || key.Status != "current" && key.Status != "retiring" || key.NotBefore.After(c.IssuedAt) || key.NotAfter != nil && !c.ExpiresAt.Before(*key.NotAfter) {
+			continue
+		}
+		publicKey, decodeErr := base64.StdEncoding.DecodeString(key.PublicKey)
+		if decodeErr == nil && len(publicKey) == ed25519.PublicKeySize && ed25519.Verify(publicKey, payload, sig) {
+			return nil
+		}
+	}
+	return errors.New("gateway config signature is not trusted")
+}
+
+func (c Config) WireGuard(privateKey string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "[Interface]\nPrivateKey = %s\nAddress = %s\nListenPort = %d\nMTU = %d\n", strings.TrimSpace(privateKey), c.Address, c.ListenPort, c.MTU)
+	for _, peer := range c.Peers {
+		fmt.Fprintf(&b, "\n[Peer]\n# DeviceID = %s\nPublicKey = %s\nAllowedIPs = %s\n", peer.DeviceID, peer.WireGuardPublicKey, peer.AllowedIPs)
+	}
+	return b.String()
+}
+
+func (c Config) Xray(certPath, keyPath string) ([]byte, error) {
+	if strings.TrimSpace(certPath) == "" || strings.TrimSpace(keyPath) == "" {
+		return nil, errors.New("TLS certificate and key paths are required")
+	}
+	profile := map[string]any{
+		"log":       map[string]any{"loglevel": "warning"},
+		"inbounds":  []any{map[string]any{"tag": "xconnect-vless-in", "listen": "0.0.0.0", "port": c.Transport.Port, "protocol": "vless", "settings": map[string]any{"clients": []any{map[string]any{"id": c.Transport.AuthID, "flow": "xtls-rprx-vision"}}, "decryption": "none"}, "streamSettings": map[string]any{"network": "tcp", "security": "tls", "tlsSettings": map[string]any{"rejectUnknownSni": true, "minVersion": "1.2", "certificates": []any{map[string]any{"certificateFile": certPath, "keyFile": keyPath}}}}}},
+		"outbounds": []any{map[string]any{"tag": "direct", "protocol": "freedom"}, map[string]any{"tag": "block", "protocol": "blackhole"}},
+	}
+	return json.MarshalIndent(profile, "", "  ")
+}

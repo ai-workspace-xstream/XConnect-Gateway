@@ -1,0 +1,8 @@
+[Unit]
+Description=Synchronize XConnect Gateway with XConnect Zero
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/xconnect-gateway up
