@@ -129,7 +129,7 @@ func (c Config) Xray(certPath, keyPath string) ([]byte, error) {
 	}
 	profile := map[string]any{
 		"log":       map[string]any{"loglevel": "warning"},
-		"inbounds":  []any{map[string]any{"tag": "xconnect-vless-in", "listen": "0.0.0.0", "port": c.Transport.Port, "protocol": "vless", "settings": map[string]any{"clients": []any{map[string]any{"id": c.Transport.AuthID, "flow": "xtls-rprx-vision"}}, "decryption": "none"}, "streamSettings": map[string]any{"network": "tcp", "security": "tls", "tlsSettings": map[string]any{"rejectUnknownSni": true, "minVersion": "1.2", "certificates": []any{map[string]any{"certificateFile": certPath, "keyFile": keyPath}}}}}},
+		"inbounds":  []any{map[string]any{"tag": "xconnect-vless-in", "listen": "0.0.0.0", "port": c.Transport.Port, "protocol": "vless", "settings": map[string]any{"clients": []any{map[string]any{"id": c.Transport.AuthID}}, "decryption": "none"}, "streamSettings": map[string]any{"network": "tcp", "security": "tls", "tlsSettings": map[string]any{"rejectUnknownSni": true, "minVersion": "1.2", "certificates": []any{map[string]any{"certificateFile": certPath, "keyFile": keyPath}}}}}},
 		"outbounds": []any{map[string]any{"tag": "direct", "protocol": "freedom"}, map[string]any{"tag": "block", "protocol": "blackhole"}},
 	}
 	return json.MarshalIndent(profile, "", "  ")
