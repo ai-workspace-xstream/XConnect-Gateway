@@ -16,29 +16,56 @@ import (
 type DeviceCredential struct {
 	CredentialID string    `json:"credential_id"`
 	Credential   string    `json:"credential"`
+	TokenType    string    `json:"token_type"`
 	IssuedAt     time.Time `json:"issued_at"`
 	ExpiresAt    time.Time `json:"expires_at"`
+	Scope        []string  `json:"scope"`
 }
 type Device struct {
-	ID                 string `json:"id"`
-	NetworkID          string `json:"network_id"`
-	Role               string `json:"role"`
-	WireGuardPublicKey string `json:"wireguard_public_key"`
+	ID                 string     `json:"id"`
+	UserID             string     `json:"user_id,omitempty"`
+	NetworkID          string     `json:"network_id"`
+	Role               string     `json:"role"`
+	Name               string     `json:"name"`
+	Platform           string     `json:"platform"`
+	Hostname           string     `json:"hostname"`
+	WireGuardPublicKey string     `json:"wireguard_public_key"`
+	WireGuardAddress   string     `json:"wireguard_address"`
+	CreatedAt          time.Time  `json:"created_at,omitempty"`
+	UpdatedAt          time.Time  `json:"updated_at,omitempty"`
+	LastSeenAt         *time.Time `json:"last_seen_at,omitempty"`
 }
 type Network struct {
-	ID string `json:"id"`
+	ID                  string    `json:"id"`
+	DisplayName         string    `json:"display_name"`
+	CIDR                string    `json:"cidr"`
+	GatewayID           string    `json:"gateway_id"`
+	GatewayWireGuardKey string    `json:"gateway_wireguard_public_key"`
+	GatewayEndpointHost string    `json:"gateway_endpoint_host"`
+	GatewayEndpointPort int       `json:"gateway_endpoint_port"`
+	TransportServerName string    `json:"transport_server_name"`
+	TransportPort       int       `json:"transport_port"`
+	TransportAuthID     string    `json:"transport_auth_id"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 type ExchangeResponse struct {
 	EnrollmentToken  string           `json:"enrollment_token"`
+	TokenType        string           `json:"token_type"`
 	ExpiresAt        time.Time        `json:"expires_at"`
+	Scope            []string         `json:"scope"`
 	DeviceCredential DeviceCredential `json:"device_credential"`
 	Device           Device           `json:"device"`
 	Network          Network          `json:"network"`
 	SigningKeys      []SigningKey     `json:"signing_keys"`
 }
 type SessionResponse struct {
+	ClientNonce     string       `json:"client_nonce"`
 	EnrollmentToken string       `json:"enrollment_token"`
+	TokenType       string       `json:"token_type"`
+	IssuedAt        time.Time    `json:"issued_at"`
 	ExpiresAt       time.Time    `json:"expires_at"`
+	Scope           []string     `json:"scope"`
 	DeviceID        string       `json:"device_id"`
 	NetworkID       string       `json:"network_id"`
 	SigningKeys     []SigningKey `json:"signing_keys"`
@@ -135,7 +162,15 @@ func (c *Client) Config(ctx context.Context, token string) (Config, error) {
 }
 func (c *Client) Ack(ctx context.Context, token string, cfg Config) error {
 	var out struct {
-		Acked bool `json:"acked"`
+		Acked     bool `json:"acked"`
+		Duplicate bool `json:"duplicate"`
+		Ack       struct {
+			DeviceID   string    `json:"device_id"`
+			ConfigID   string    `json:"config_id"`
+			Generation uint64    `json:"generation"`
+			AppliedAt  time.Time `json:"applied_at"`
+			ReceivedAt time.Time `json:"received_at"`
+		} `json:"ack"`
 	}
 	_, err := c.request(ctx, http.MethodPost, fmt.Sprintf("/api/overlay/v1/enrollment/signed-config/%d/ack", cfg.Generation), "Bearer "+token, map[string]string{"config_id": cfg.ConfigID, "device_id": cfg.GatewayID, "applied_at": time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)}, &out)
 	if err == nil && !out.Acked {
