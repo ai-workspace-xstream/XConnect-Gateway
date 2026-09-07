@@ -30,7 +30,7 @@ func TestSignedGatewayConfigAndRendering(t *testing.T) {
 		t.Fatalf("bad WireGuard config: %s", wg)
 	}
 	xray, err := cfg.Xray("/tls.crt", "/tls.key")
-	if err != nil || !strings.Contains(string(xray), "xtls-rprx-vision") {
+	if err != nil || strings.Contains(string(xray), "xtls-rprx-vision") || !strings.Contains(string(xray), `"id": "11111111-1111-1111-1111-111111111111"`) {
 		t.Fatalf("bad Xray config: %s err=%v", xray, err)
 	}
 	cfg.Generation++
