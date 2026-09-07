@@ -23,7 +23,7 @@ type State struct {
 	AppliedGeneration   uint64           `json:"applied_generation,omitempty"`
 }
 
-func LoadState(dir string) (State, error) {
+func LoadPendingState(dir string) (State, error) {
 	var state State
 	raw, err := os.ReadFile(filepath.Join(dir, "state.json"))
 	if err != nil {
@@ -32,8 +32,18 @@ func LoadState(dir string) (State, error) {
 	if err = json.Unmarshal(raw, &state); err != nil {
 		return state, err
 	}
-	if state.SchemaVersion != 1 || state.Controller == "" || state.GatewayID == "" || state.Credential.Credential == "" {
+	if state.SchemaVersion != 1 || state.Controller == "" || state.GatewayID == "" || state.PrivateKey == "" || state.PublicKey == "" {
 		return state, errors.New("invalid gateway state")
+	}
+	return state, nil
+}
+func LoadState(dir string) (State, error) {
+	state, err := LoadPendingState(dir)
+	if err != nil {
+		return state, err
+	}
+	if state.Credential.Credential == "" {
+		return state, errors.New("gateway enrollment is incomplete")
 	}
 	return state, nil
 }

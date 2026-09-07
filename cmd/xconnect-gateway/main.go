@@ -25,9 +25,11 @@ func main() {
 }
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: xconnect-gateway <join|sync|up|down|status|diagnose>")
+		return errors.New("usage: xconnect-gateway <init|join|sync|up|down|status|diagnose>")
 	}
 	switch args[0] {
+	case "init":
+		return initState(ctx, args[1:])
 	case "join":
 		return join(ctx, args[1:])
 	case "sync":
@@ -43,6 +45,32 @@ func run(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+func initState(ctx context.Context, args []string) error {
+	f, dir := common("init", args)
+	gatewayID := f.String("gateway-id", "", "Gateway ID matching the Zero network")
+	controller := f.String("controller", "", "XConnect Zero accounts HTTPS origin")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if *gatewayID == "" {
+		return errors.New("init requires --gateway-id")
+	}
+	client, err := gateway.NewClient(*controller)
+	if err != nil {
+		return err
+	}
+	_ = client
+	privateKey, publicKey, err := wireGuardKeys(ctx)
+	if err != nil {
+		return err
+	}
+	state := gateway.State{SchemaVersion: 1, Controller: strings.TrimRight(*controller, "/"), GatewayID: *gatewayID, PrivateKey: privateKey, PublicKey: publicKey}
+	if err := gateway.SaveState(*dir, state); err != nil {
+		return err
+	}
+	fmt.Printf("wireguard_public_key=%s\n", publicKey)
+	return nil
 }
 func common(name string, args []string) (*flag.FlagSet, *string) {
 	f := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -62,9 +90,17 @@ func join(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	privateKey, publicKey, err := wireGuardKeys(ctx)
-	if err != nil {
-		return err
+	privateKey, publicKey := "", ""
+	if pending, pendingErr := gateway.LoadPendingState(*dir); pendingErr == nil {
+		if pending.GatewayID != *gatewayID || pending.Controller != strings.TrimRight(controller, "/") || pending.Credential.Credential != "" {
+			return errors.New("existing gateway state does not match this enrollment")
+		}
+		privateKey, publicKey = pending.PrivateKey, pending.PublicKey
+	} else {
+		privateKey, publicKey, err = wireGuardKeys(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	hostname, _ := os.Hostname()
 	client, err := gateway.NewClient(controller)
