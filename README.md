@@ -19,6 +19,8 @@ Install `wireguard-tools`, `xray`, the systemd units under `packaging/systemd`, 
 
 ```sh
 sudo xconnect-gateway diagnose
+sudo xconnect-gateway init --controller https://accounts-uat.onwalk.net --gateway-id gw-uat-1
+# Put the displayed public key into the owner-scoped Zero network, then create its one-time Gateway invite.
 sudo xconnect-gateway join --gateway-id gw-uat-1 'xconnect://join/REDACTED?controller=https%3A%2F%2Faccounts-uat.onwalk.net'
 sudo xconnect-gateway up
 sudo systemctl enable --now xconnect-gateway-sync.timer
