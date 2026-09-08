@@ -17,6 +17,12 @@ The runtime performs `join → session renewal → signed gateway config sync �
 
 ## Linux host
 
+自建节点的安装脚本、Zero 加入和 WireGuard-over-VLESS 验证见
+[docs/self-hosted-install-and-validation.md](docs/self-hosted-install-and-validation.md)。
+其中的 `curl https://install.svc.plus/xconnect-gateway | bash` 只安装
+Gateway 二进制；外部 Xray/WireGuard、TLS 文件和 Zero 邀请仍由节点管理员
+按受保护流程配置。
+
 Install `wireguard-tools`, `xray`, the systemd units under `packaging/systemd`, and the released binary at `/usr/local/bin/xconnect-gateway`. Provision the TLS certificate and key at `/etc/xconnect-gateway/tls.crt` and `/etc/xconnect-gateway/tls.key` from Vault without writing either value to Git.
 
 ```sh
