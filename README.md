@@ -7,7 +7,9 @@ The runtime performs `join → session renewal → signed gateway config sync �
 ## Runtime boundary
 
 - `xconnect-gateway`: owns enrollment, protected local state, signed configuration verification, generated runtime files, apply and ACK.
-- external `WireGuard` and `Xray`: data plane processes.
+- external `WireGuard` and `Xray`: data plane processes. The generated Gateway
+  Xray profile routes the dedicated VLESS inbound to `127.0.0.1:51820`; it is
+  not a general-purpose internet proxy.
 - GitOps: non-sensitive UAT topology and release selection.
 - Vault: TLS key material and other environment secrets; expected UAT path is `kv/data/uat/xconnect-one`.
 - `accounts`: per-user isolated networks, devices, invites, policy and signed configuration.
